@@ -1,0 +1,192 @@
+Project: SAGE – Smart Adaptive Guidance Engine
+Vision
+Build a personal AI assistant called SAGE (Smart Adaptive Guidance Engine), inspired by the functionality and elegance of Jarvis but designed as an original, modular, and extensible AI system. SAGE should act as a voice-enabled, memory-based personal assistant capable of conversation, task automation, information retrieval, and future expansion into a full desktop AI ecosystem.
+Primary Goals
+
+Natural voice conversations
+Persistent memory and personalization
+Tool and task execution
+Modern futuristic user interface
+Modular architecture for easy expansion
+Production-quality, clean, maintainable code
+
+
+Technology Stack
+Backend
+
+Python 3.12+
+FastAPI
+Uvicorn
+
+Frontend
+
+HTML5
+CSS3
+JavaScript (ES6+)
+
+Database & Memory
+
+SQLite
+JSON-based configuration and memory storage
+Optional future upgrade to PostgreSQL or Firebase
+
+AI Services
+
+Gemini API (primary LLM)
+Optional support for OpenAI and local LLMs later
+
+Voice System
+
+Whisper for Speech-to-Text
+pyttsx3 for Text-to-Speech
+Wake-word support in future versions
+
+
+Core Features (Phase-wise)
+Phase 1 – Foundation
+
+Create project architecture
+FastAPI backend setup
+Modern chat interface
+Connect Gemini API
+Basic conversation capability
+
+Phase 2 – Voice Assistant
+
+Speech-to-Text using Whisper
+Text-to-Speech responses
+Voice input button
+Conversation history
+
+Phase 3 – Memory System
+
+Store conversations
+Store user preferences
+Context-aware responses
+Long-term memory retrieval
+
+Phase 4 – Productivity Features
+
+Notes management
+To-do lists
+Reminders
+Search and summarize information
+
+Phase 5 – System Actions
+
+Open websites (Google, YouTube, GitHub, etc.)
+File management
+Create and organize folders
+Read and write text files
+Future desktop automation support
+
+Phase 6 – Plugin System
+
+Add skills as independent modules
+Enable easy feature expansion
+Dynamic tool loading
+Third-party integrations
+
+
+User Interface Requirements
+Theme:
+
+Dark futuristic design
+Inspired by advanced AI dashboards
+Minimal and professional
+No unnecessary emojis
+Smooth animations and subtle micro-interactions
+Responsive design for desktop and mobile
+
+Suggested Design:
+
+Glassmorphism effects
+Neon blue/cyan accent colors
+Clean typography
+Animated voice orb for listening state
+Typing indicator
+Chat bubbles with timestamps
+
+
+Project Architecture
+sage/
+│
+├── app.py
+├── main.py
+├── config/
+│   ├── settings.py
+│   └── secrets.example.py
+│
+├── routes/
+│   ├── chat.py
+│   ├── voice.py
+│   ├── notes.py
+│   └── tasks.py
+│
+├── services/
+│   ├── gemini_service.py
+│   ├── speech_service.py
+│   ├── tts_service.py
+│   ├── search_service.py
+│   └── file_service.py
+│
+├── memory/
+│   ├── memory_manager.py
+│   ├── conversation_memory.py
+│   └── preferences_memory.py
+│
+├── database/
+│   ├── database.py
+│   └── models.py
+│
+├── plugins/
+│   └── example_plugin.py
+│
+├── static/
+│   ├── css/
+│   ├── js/
+│   ├── images/
+│   └── audio/
+│
+├── templates/
+│   └── index.html
+│
+└── requirements.txt
+
+Development Rules
+
+Build incrementally.
+Do NOT generate the entire project at once.
+Implement one feature at a time.
+After each step, explain:
+
+Why the file exists
+What the code does
+How it works internally
+
+
+Ask me to test each step before proceeding.
+Follow industry-standard coding practices.
+Write clean, human-readable, well-commented code.
+Use modular, reusable components.
+Avoid hardcoding values.
+Prepare the architecture for future desktop automation and AI agent capabilities.
+
+
+Workflow
+For every step:
+
+Explain the objective.
+Generate only the files required for that step.
+Explain every line of important code.
+Provide setup instructions.
+Wait for my confirmation and test results before moving to the next phase.
+
+Begin with Phase 1 only:
+
+Create the folder structure.
+Set up FastAPI.
+Create a basic futuristic chat interface.
+Connect a simple chat endpoint.
+Wait for my approval before adding any other features.
+
