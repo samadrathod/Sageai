@@ -1,0 +1,3 @@
+- [SAGE Desktop Agent architecture](sage-desktop-agent.md) — Python agent on localhost:7700; SAGE web polls /health every 10s; handles intents before Gemini
+- [Gemini API key setup](gemini-api-key.md) — uses GEMINI_API_KEY directly; removed AI_INTEGRATIONS_GEMINI_BASE_URL requirement in both client.ts files
+- [esbuild externals fix](esbuild-externals.md) — removed "@google/*" from externals in build.mjs so @google/genai bundles correctly
