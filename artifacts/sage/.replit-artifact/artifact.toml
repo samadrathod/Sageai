@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "SAGE – Smart Adaptive Guidance Engine"
+version = "1.0.0"
+id = "artifacts/sage"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18573
+
+[services.development]
+run = "pnpm --filter @workspace/sage run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/sage", "run", "build" ]
+publicDir = "artifacts/sage/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18573"
+BASE_PATH = "/"
