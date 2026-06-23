@@ -47,3 +47,22 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Databases
+*.db
+*.db-journal
+
+# Environment Secrets
+.env
+.env.*
+
+# Python Cache
+__pycache__/
+*.pyc
+
+# Local assist artifact release
+/SAGE/
+/build_pyi/
+/release_temp/
+*.spec
+*.log

@@ -1,5 +1,10 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 
+type SpeechRecognition = any;
+type SpeechRecognitionEvent = any;
+type SpeechRecognitionErrorEvent = any;
+
+
 interface UseVoiceOptions {
   onTranscript?: (text: string) => void;
   onError?: (err: string) => void;

@@ -1,6 +1,7 @@
 import express, { type Express } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
+import path from "path";
 import router from "./routes";
 import { logger } from "./lib/logger";
 
@@ -30,5 +31,17 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", router);
+
+// Serve frontend build files
+const currentDir = typeof __dirname !== "undefined" ? __dirname : (import.meta.dirname || "");
+const publicDir = path.resolve(currentDir, "../../sage/dist/public");
+
+app.use(express.static(publicDir));
+app.use((req, res, next) => {
+  if (req.path.startsWith("/api")) {
+    return next();
+  }
+  res.sendFile(path.join(publicDir, "index.html"));
+});
 
 export default app;

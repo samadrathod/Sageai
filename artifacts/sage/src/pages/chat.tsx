@@ -57,6 +57,10 @@ export default function ChatPage() {
 
   const { data: conversations, isLoading: isLoadingConvos } = useListGeminiConversations();
   const createConvo = useCreateGeminiConversation();
+  console.log("VALUE:", conversations);
+console.log("TYPE:", typeof conversations);
+console.log("IS ARRAY:", Array.isArray(conversations));
+console.log("JSON:", JSON.stringify(conversations));
   const deleteConvo = useDeleteGeminiConversation();
 
   const { data: activeConvo, isLoading: isLoadingActive } = useGetGeminiConversation(
@@ -65,10 +69,14 @@ export default function ChatPage() {
   );
 
   useEffect(() => {
-    if (conversations && conversations.length > 0 && !activeId) {
-      setActiveId(conversations[0].id);
-    }
-  }, [conversations, activeId]);
+  if (
+    Array.isArray(conversations) &&
+    conversations.length > 0 &&
+    !activeId
+  ) {
+    setActiveId(conversations[0].id);
+  }
+}, [conversations, activeId]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -128,7 +136,20 @@ export default function ChatPage() {
           };
         });
         if (voiceEnabled) speak(intentResult.response);
+        
+        // Persist local execution to backend DB
+        try {
+          await fetch(`/api/gemini/conversations/${activeId}/messages`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ content: userMsg, localResponse: intentResult.response }),
+          });
+        } catch (e) {
+          console.error("Failed to persist local command: ", e);
+        }
+
         setIsStreaming(false);
+        queryClient.invalidateQueries({ queryKey: getGetGeminiConversationQueryKey(activeId) });
         return;
       }
     }
@@ -201,7 +222,7 @@ export default function ChatPage() {
           <div className="p-2 space-y-1">
             {isLoadingConvos
               ? Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-12 w-full rounded-lg bg-border/20" />)
-              : conversations?.map((convo) => (
+              : (Array.isArray(conversations) ? conversations : []).map((convo) => (
                   <div
                     key={convo.id}
                     onClick={() => setActiveId(convo.id)}

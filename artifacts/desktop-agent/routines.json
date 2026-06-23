@@ -1,0 +1,62 @@
+{
+  "coding_setup": {
+    "name": "Coding Setup",
+    "trigger_phrases": [
+      "open my coding setup",
+      "start coding",
+      "coding setup"
+    ],
+    "steps": [
+      {
+        "action": "speak",
+        "text": "Initializing your coding setup."
+      },
+      {
+        "action": "launch_app",
+        "target": "code"
+      },
+      {
+        "action": "open_path",
+        "target": "https://github.com"
+      },
+      {
+        "action": "open_path",
+        "target": "~"
+      },
+      {
+        "action": "speak",
+        "text": "VS Code, GitHub, and your home folder are open. Start coding!"
+      }
+    ]
+  },
+  "study_mode": {
+    "name": "Study Mode",
+    "trigger_phrases": [
+      "study mode",
+      "start studying",
+      "enable study mode"
+    ],
+    "steps": [
+      {
+        "action": "speak",
+        "text": "Activating study mode. Open notes, starting timer, and suppressing notifications."
+      },
+      {
+        "action": "open_path",
+        "target": "http://localhost:5173/notes"
+      },
+      {
+        "action": "focus_assist",
+        "enabled": true
+      },
+      {
+        "action": "start_timer",
+        "duration_minutes": 25
+      },
+      {
+        "action": "speak",
+        "text": "Focus mode enabled. Pomodoro timer set for twenty-five minutes. Happy studying!"
+      }
+    ]
+  }
+}

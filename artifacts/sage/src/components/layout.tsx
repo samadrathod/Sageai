@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { MessageSquare, StickyNote, CheckSquare, BarChart2, Zap } from "lucide-react";
+import { MessageSquare, StickyNote, CheckSquare, BarChart2, Zap, Brain } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -16,6 +16,7 @@ export function Layout({ children }: LayoutProps) {
     { href: "/", icon: MessageSquare, label: "Chat" },
     { href: "/notes", icon: StickyNote, label: "Notes" },
     { href: "/todos", icon: CheckSquare, label: "Tasks" },
+    { href: "/memory", icon: Brain, label: "Memory" },
     { href: "/dashboard", icon: BarChart2, label: "System Stats" },
   ];
 

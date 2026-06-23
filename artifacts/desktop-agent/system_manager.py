@@ -36,6 +36,13 @@ def get_system_info() -> dict[str, Any]:
     cpu_percent = psutil.cpu_percent(interval=0.5)
     mem = psutil.virtual_memory()
     disk = psutil.disk_usage("/")
+    
+    battery = psutil.sensors_battery()
+    battery_info = {
+        "percent": battery.percent if battery else 100,
+        "power_plugged": battery.power_plugged if battery else True,
+        "secsleft": battery.secsleft if battery else -1
+    }
 
     return {
         "platform": platform.system(),
@@ -58,6 +65,7 @@ def get_system_info() -> dict[str, Any]:
             "free_gb": round(disk.free / 1e9, 2),
             "percent": disk.percent,
         },
+        "battery": battery_info
     }
 
 

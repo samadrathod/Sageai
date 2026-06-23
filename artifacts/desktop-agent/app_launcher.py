@@ -23,6 +23,20 @@ OS = platform.system()  # "Windows" | "Darwin" | "Linux"
 
 def _windows_launch(target: str, display_name: str) -> str:
     """Attempt to launch an app on Windows using several strategies."""
+    # Special fallbacks for common apps with non-standard install paths
+    if target == "devenv":
+        import glob
+        vs_paths = glob.glob(r"C:\Program Files\Microsoft Visual Studio\*\*\Common7\IDE\devenv.exe")
+        if vs_paths and os.path.isfile(vs_paths[0]):
+            subprocess.Popen([vs_paths[0]], shell=False, close_fds=True)
+            return f"Launched {display_name}."
+
+    if target == "code":
+        vscode_path = os.path.expandvars(r"%LOCALAPPDATA%\Programs\Microsoft VS Code\Code.exe")
+        if os.path.isfile(vscode_path):
+            subprocess.Popen([vscode_path], shell=False, close_fds=True)
+            return f"Launched {display_name}."
+
     # Strategy 1: target is already a known command in PATH
     if shutil.which(target):
         subprocess.Popen([target], shell=False, close_fds=True)
@@ -30,13 +44,17 @@ def _windows_launch(target: str, display_name: str) -> str:
 
     # Strategy 2: use `start` which handles registered Windows apps
     try:
-        subprocess.Popen(
+        res = subprocess.run(
             ["cmd", "/c", "start", "", target],
             shell=False,
-            close_fds=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=2.0
         )
-        return f"Launched {display_name}."
-    except FileNotFoundError:
+        if res.returncode == 0:
+            return f"Launched {display_name}."
+    except Exception:
         pass
 
     # Strategy 3: common Program Files locations
