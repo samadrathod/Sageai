@@ -52,7 +52,7 @@ def start_express_server() -> Optional[subprocess.Popen]:
     if not os.path.exists(env_file):
         # Generate default env file if missing
         with open(env_file, "w") as f:
-            f.write("GEMINI_API_KEY=YOUR_GEMINI_API_KEY\nPORT=5000\n")
+            f.write("GROQ_API_KEY=YOUR_GROQ_API_KEY\nPORT=5000\n")
             
     cmd = ["node", f"--env-file={env_file}", "--enable-source-maps", "./dist/index.mjs"]
     
@@ -81,12 +81,49 @@ def start_express_server() -> Optional[subprocess.Popen]:
         return None
 
 
+def _find_python() -> str:
+    """
+    Find the real Python interpreter.
+    
+    When running from a PyInstaller-frozen binary (SAGE.exe), sys.executable
+    points to SAGE.exe — NOT Python. We need to find the actual Python
+    interpreter on the system PATH to spawn the desktop agent.
+    """
+    if not getattr(sys, "frozen", False):
+        # Running as a normal Python script — sys.executable is correct
+        return sys.executable
+    
+    # Frozen binary: find Python on PATH
+    import shutil
+    for name in ("python", "python3", "python3.11", "python3.12", "python3.10"):
+        path = shutil.which(name)
+        if path:
+            return path
+    
+    # Last resort: try common Windows install locations
+    common_paths = [
+        os.path.expandvars(r"%LOCALAPPDATA%\Programs\Python\Python311\python.exe"),
+        os.path.expandvars(r"%LOCALAPPDATA%\Programs\Python\Python312\python.exe"),
+        os.path.expandvars(r"%LOCALAPPDATA%\Programs\Python\Python310\python.exe"),
+        r"C:\Python311\python.exe",
+        r"C:\Python312\python.exe",
+        r"C:\Python310\python.exe",
+    ]
+    for p in common_paths:
+        if os.path.exists(p):
+            return p
+    
+    # Fallback — hope "python" is on PATH
+    return "python"
+
+
 def start_desktop_agent() -> Optional[subprocess.Popen]:
     """Spawn the Python Desktop Agent as a background subprocess."""
     global agent_process
     _, agent_dir = get_paths()
     
-    cmd = [sys.executable, "main.py"]
+    python_exe = _find_python()
+    cmd = [python_exe, "main.py"]
     
     creationflags = 0
     if sys.platform == "win32":
@@ -100,7 +137,7 @@ def start_desktop_agent() -> Optional[subprocess.Popen]:
     env_vars = os.environ.copy()
     env_vars["SAGE_PRODUCTION"] = "1"
     
-    logger.info(f"Launching Python Desktop Agent in {agent_dir}")
+    logger.info(f"Launching Python Desktop Agent in {agent_dir} using: {python_exe}")
     try:
         log_file = open(log_file_path, "a", encoding="utf-8")
         agent_process = subprocess.Popen(

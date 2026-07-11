@@ -5,6 +5,20 @@ launcher.py — Main production entry point for SAGE Desktop Assistant.
 from __future__ import annotations
 import os
 import sys
+import io
+
+# Redirect stdout and stderr to devnull in windowless mode to prevent crashes from library prints and fileno() lookups
+if getattr(sys, "frozen", False):
+    try:
+        base_dir = os.path.dirname(sys.executable)
+        sys.stdout = open(os.path.join(base_dir, "launcher_output.log"), "a", encoding="utf-8", buffering=1)
+        sys.stderr = sys.stdout
+    except Exception as e:
+        try:
+            with open(os.path.expandvars(r"%TEMP%\sage_log_err.txt"), "w") as f:
+                f.write(f"Failed to open launcher_output.log: {e}\n")
+        except Exception:
+            pass
 import time
 import logging
 import threading
@@ -24,13 +38,15 @@ import startup_manager
 # Configure logging
 log_dir = os.path.join(service_manager.get_base_dir(), "logs")
 os.makedirs(log_dir, exist_ok=True)
+
+handlers = [logging.FileHandler(os.path.join(log_dir, "launcher.log"), encoding="utf-8")]
+if sys.stdout is not None:
+    handlers.append(logging.StreamHandler(sys.stdout))
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler(os.path.join(log_dir, "launcher.log"), encoding="utf-8")
-    ]
+    handlers=handlers
 )
 logger = logging.getLogger("sage-launcher")
 
@@ -160,12 +176,19 @@ def run_tray():
     
     initial_status = state_manager.get_overall_status()
     tray_icon = pystray.Icon("sage-launcher", create_tray_image(initial_status), "SAGE Assistant", menu)
-    tray_icon.run()
+    tray_icon.run_detached()
 
 
 def main():
     global window
     
+    # Hide the console window immediately on Windows if running as a frozen binary
+    if sys.platform == "win32" and getattr(sys, "frozen", False):
+        import ctypes
+        hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+        if hwnd:
+            ctypes.windll.user32.ShowWindow(hwnd, 0)  # 0 = SW_HIDE
+            
     # 1. Prevent duplicate instances
     if not startup_manager.prevent_duplicate_instance():
         # Duplicate detected, show a messagebox and exit
@@ -178,6 +201,30 @@ def main():
         
     logger.info("Initializing SAGE Launcher...")
     
+    # Create Windows desktop shortcut if on Windows
+    if sys.platform == "win32":
+        try:
+            startup_manager.create_desktop_shortcut()
+        except Exception as e:
+            logger.error(f"Could not create desktop shortcut: {e}")
+            
+        try:
+            import winreg
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Run",
+                0,
+                winreg.KEY_WRITE
+            )
+            try:
+                winreg.DeleteValue(key, "SAGEAgent")
+                logger.info("Legacy SAGEAgent registry entry cleaned up.")
+            except FileNotFoundError:
+                pass
+            winreg.CloseKey(key)
+        except Exception as e:
+            logger.error(f"Failed to cleanup legacy registry: {e}")
+    
     # 2. Boot Express and Python Agent services
     service_manager.start_express_server()
     service_manager.start_desktop_agent()
@@ -185,9 +232,11 @@ def main():
     # 3. Start Watchdog Thread
     watchdog.start_watchdog()
     
-    # 4. Start Tray Icon in background thread
-    tray_thread = threading.Thread(target=run_tray, daemon=True)
-    tray_thread.start()
+    # 4. Start Tray Icon in a detached background thread
+    run_tray()
+    
+    # Check if launcher was started silently on system boot
+    is_startup_mode = "--startup" in sys.argv
     
     # 5. Initialize native webview window (Edge HTML/JS/CSS shell)
     window = webview.create_window(
@@ -196,7 +245,8 @@ def main():
         width=1100,
         height=750,
         resizable=True,
-        min_size=(800, 600)
+        min_size=(800, 600),
+        hidden=is_startup_mode
     )
     
     # Register window hide interceptor
@@ -207,4 +257,19 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        import traceback
+        try:
+            # Try to write to launcher_crash.txt in the base directory
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            crash_file = os.path.join(base_dir, "launcher_crash.txt")
+            with open(crash_file, "w") as f:
+                f.write(f"Uncaught Exception: {e}\n")
+                traceback.print_exc(file=f)
+        except Exception:
+            # Fallback to local folder if base_dir is read-only (e.g. temporary _MEIPASS)
+            with open("launcher_crash.txt", "w") as f:
+                f.write(f"Uncaught Exception: {e}\n")
+                traceback.print_exc(file=f)

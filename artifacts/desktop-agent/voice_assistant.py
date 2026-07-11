@@ -197,21 +197,31 @@ def listen_loop():
     r.dynamic_energy_threshold = True
     r.pause_threshold = 0.8
 
-    logger.info("Calibrating microphone ambient noise...")
-    try:
-        with mic as source:
-            r.adjust_for_ambient_noise(source, duration=1.0)
-        logger.info("Microphone calibration complete.")
-    except Exception as e:
-        logger.error(f"Failed to access microphone: {e}")
-        return
-
     import main  # Dynamic import to fetch main.voice_enabled
+
+    calibrated = False
+    last_error_time = 0
+    error_cooldown = 15  # sleep for 15 seconds on mic errors to avoid log spamming
 
     while True:
         if not main.voice_enabled:
             time.sleep(1.0)
             continue
+
+        if not calibrated:
+            logger.info("Calibrating microphone ambient noise...")
+            try:
+                with mic as source:
+                    r.adjust_for_ambient_noise(source, duration=1.0)
+                logger.info("Microphone calibration complete.")
+                calibrated = True
+            except Exception as e:
+                current_time = time.time()
+                if current_time - last_error_time > error_cooldown:
+                    logger.warning(f"Could not access microphone for calibration: {e}. SAGE will keep retrying in the background...")
+                    last_error_time = current_time
+                time.sleep(error_cooldown)
+                continue
 
         try:
             logger.debug("Listening for wake word...")
@@ -235,8 +245,13 @@ def listen_loop():
             # Unrecognized audio, continue listening
             pass
         except Exception as e:
-            logger.error(f"Voice loop error: {e}")
-            time.sleep(1.0)
+            current_time = time.time()
+            if current_time - last_error_time > error_cooldown:
+                logger.warning(f"Voice loop microphone access error: {e}. Will retry in {error_cooldown}s.")
+                last_error_time = current_time
+            # If the mic failed, we might need to recalibrate when it comes back
+            calibrated = False
+            time.sleep(error_cooldown)
 
 
 def start_voice_assistant():

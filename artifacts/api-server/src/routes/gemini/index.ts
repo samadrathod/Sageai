@@ -10,8 +10,6 @@ import {
   ListGeminiMessagesParams,
   CreateGeminiConversationBody,
 } from "@workspace/api-zod";
-import { ai } from "@workspace/integrations-gemini-ai";
-import { Type } from "@google/genai";
 import { logger } from "../../lib/logger";
 
 const router: IRouter = Router();
@@ -303,16 +301,64 @@ router.post("/gemini/conversations/:id/messages", async (req, res): Promise<void
     logger.warn(`Ollama connection failed: ${error.message}. Falling back to cloud.`);
   }
 
-  // 5. Cloud Fallback if Ollama was not successful
+  // 5. Cloud Fallback — Groq API (Primary Cloud Provider)
   if (!ollamaSuccess) {
-    let cloudSuccess = false;
-    
-    // Fallback 1: Groq API
     const groqKey = process.env.GROQ_API_KEY;
-    if (groqKey) {
+    if (!groqKey) {
+      logger.error("GROQ_API_KEY is not set. Cannot use cloud AI fallback.");
+      res.write(`data: ${JSON.stringify({ content: "\n⚠ No AI provider available. Please set GROQ_API_KEY in your .env file and ensure Ollama is running for local inference." })}\n\n`);
+    } else {
       try {
-        logger.info("Using Groq Cloud API fallback...");
-        const groqMessages = [
+        logger.info("Using Groq Cloud API (primary cloud provider)...");
+
+        // Tool definitions for Groq (OpenAI-compatible function calling)
+        const tools = [
+          {
+            type: "function" as const,
+            function: {
+              name: "save_preference_or_fact",
+              description: "Save a user preference, hobby, or personal fact to SAGE memory. Use this whenever the user explicitly tells you something about themselves, their settings preferences, or personal details.",
+              parameters: {
+                type: "object",
+                properties: {
+                  content: { type: "string", description: "The memory content (e.g. 'User prefers VS Code for Python')" },
+                  category: { type: "string", description: "The category, e.g. 'preference', 'hobby', 'personal', 'work'." }
+                },
+                required: ["content"]
+              }
+            }
+          },
+          {
+            type: "function" as const,
+            function: {
+              name: "delete_preference_or_fact",
+              description: "Delete an outdated or incorrect preference or fact from memory using its database ID. Use list_memories or look at the system prompt list to find the ID.",
+              parameters: {
+                type: "object",
+                properties: {
+                  id: { type: "number", description: "The integer ID of the memory to delete." }
+                },
+                required: ["id"]
+              }
+            }
+          },
+          {
+            type: "function" as const,
+            function: {
+              name: "execute_desktop_command",
+              description: "Execute a local desktop command (e.g. open an application like VS Code, Chrome, Spotify, Calculator, File Explorer, Task Manager; search files; rename/delete files; stop/kill processes; show system info). Use this whenever the user wants to perform an action on their computer.",
+              parameters: {
+                type: "object",
+                properties: {
+                  command: { type: "string", description: "The natural language desktop command to execute (e.g. 'open chrome', 'search for resume', 'kill spotify', 'show cpu status')" }
+                },
+                required: ["command"]
+              }
+            }
+          }
+        ];
+
+        const groqMessages: any[] = [
           { role: "system", content: SAGE_SYSTEM },
           ...history.slice(0, -1).map(m => ({
             role: m.role === "assistant" ? "assistant" : "user",
@@ -321,203 +367,155 @@ router.post("/gemini/conversations/:id/messages", async (req, res): Promise<void
           { role: "user", content: userMsg }
         ];
 
-        const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${groqKey}`,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            model: "llama3-8b-8192",
-            messages: groqMessages,
-            stream: true
-          })
-        });
-
-        if (response.ok && response.body) {
-          cloudSuccess = true;
-          const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = "";
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split("\n");
-            buffer = lines.pop() || "";
-
-            for (const line of lines) {
-              const cleanedLine = line.trim();
-              if (cleanedLine.startsWith("data: ")) {
-                const dataStr = cleanedLine.slice(6).trim();
-                if (dataStr === "[DONE]") break;
-                try {
-                  const data = JSON.parse(dataStr);
-                  const content = data.choices?.[0]?.delta?.content || "";
-                  if (content) {
-                    fullResponse += content;
-                    res.write(`data: ${JSON.stringify({ content })}\n\n`);
-                  }
-                } catch {
-                  // ignore JSON parse error
-                }
-              }
-            }
-          }
-        }
-      } catch (err: any) {
-        logger.error(`Groq fallback failed: ${err.message}`);
-      }
-    }
-
-    // Fallback 2: Gemini API (Secondary Cloud)
-    if (!cloudSuccess) {
-      try {
-        logger.info("Using Gemini Cloud API secondary fallback...");
-        const chatMessages: any[] = [
-          { role: "user" as const, parts: [{ text: SAGE_SYSTEM }] },
-          { role: "model" as const, parts: [{ text: "Understood. I am SAGE, ready to assist you." }] },
-          ...history.map((m) => ({
-            role: m.role === "assistant" ? ("model" as const) : ("user" as const),
-            parts: [{ text: m.content }],
-          })),
-        ];
-
-        let currentMessages = [...chatMessages];
-        let finalStream;
         let retries = 0;
+        let needsStreaming = true;
 
-        while (retries < 3) {
-          const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: currentMessages,
-            config: {
-              maxOutputTokens: 8192,
-              tools: [
-                {
-                  functionDeclarations: [
-                    {
-                      name: "save_preference_or_fact",
-                      description: "Save a user preference, hobby, or personal fact to SAGE memory. Use this whenever the user explicitly tells you something about themselves, their settings preferences, or personal details.",
-                      parameters: {
-                        type: Type.OBJECT,
-                        properties: {
-                          content: { type: Type.STRING, description: "The memory content (e.g. 'User prefers VS Code for Python')" },
-                          category: { type: Type.STRING, description: "The category, e.g. 'preference', 'hobby', 'personal', 'work'." }
-                        },
-                        required: ["content"]
-                      }
-                    },
-                    {
-                      name: "delete_preference_or_fact",
-                      description: "Delete an outdated or incorrect preference or fact from memory using its database ID. Use list_memories or look at the system prompt list to find the ID.",
-                      parameters: {
-                        type: Type.OBJECT,
-                        properties: {
-                          id: { type: Type.INTEGER, description: "The integer ID of the memory to delete." }
-                        },
-                        required: ["id"]
-                      }
-                    },
-                    {
-                      name: "execute_desktop_command",
-                      description: "Execute a local desktop command (e.g. open an application like VS Code, Chrome, Spotify, Calculator, File Explorer, Task Manager; search files; rename/delete files; stop/kill processes; show system info). Use this whenever the user wants to perform an action on their computer.",
-                      parameters: {
-                        type: Type.OBJECT,
-                        properties: {
-                          command: { type: Type.STRING, description: "The natural language desktop command to execute (e.g. 'open chrome', 'search for resume', 'kill spotify', 'show cpu status')" }
-                        },
-                        required: ["command"]
-                      }
-                    }
-                  ]
-                }
-              ]
-            }
+        // Tool-calling loop (non-streaming to handle function calls)
+        while (retries < 3 && needsStreaming) {
+          const toolResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${groqKey}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              model: "llama-3.3-70b-versatile",
+              messages: groqMessages,
+              tools: tools,
+              tool_choice: "auto",
+              stream: false
+            })
           });
 
-          const functionCalls = response.functionCalls;
-          if (!functionCalls || functionCalls.length === 0) {
-            finalStream = await ai.models.generateContentStream({
-              model: "gemini-2.5-flash",
-              contents: currentMessages,
-              config: { maxOutputTokens: 8192 }
-            });
+          if (!toolResponse.ok) {
+            const errorText = await toolResponse.text();
+            logger.error(`Groq API returned ${toolResponse.status}: ${errorText}`);
+            throw new Error(`Groq API error: ${toolResponse.status}`);
+          }
+
+          const toolData = await toolResponse.json() as any;
+          const choice = toolData.choices?.[0];
+
+          if (!choice) {
+            throw new Error("No choices in Groq response");
+          }
+
+          const toolCalls = choice.message?.tool_calls;
+
+          if (!toolCalls || toolCalls.length === 0) {
+            // No tool calls — model produced a direct text response
+            // Stream it to the client now
+            const directContent = choice.message?.content || "";
+            if (directContent) {
+              fullResponse += directContent;
+              res.write(`data: ${JSON.stringify({ content: directContent })}\n\n`);
+            }
+            needsStreaming = false;
             break;
           }
 
-          const functionResponses: any[] = [];
-          for (const call of functionCalls) {
-            logger.info(`Gemini called function: ${call.name} with args: ${JSON.stringify(call.args)}`);
-            let responseContent = {};
+          // Process tool calls
+          logger.info(`Groq requested ${toolCalls.length} tool call(s)`);
+          groqMessages.push(choice.message); // Add assistant message with tool_calls
 
-            if (call.name === "save_preference_or_fact") {
-              const args = call.args as { content: string; category?: string };
+          for (const call of toolCalls) {
+            const fnName = call.function.name;
+            let fnArgs: any;
+            try {
+              fnArgs = JSON.parse(call.function.arguments);
+            } catch {
+              fnArgs = {};
+            }
+            logger.info(`Groq tool call: ${fnName} with args: ${JSON.stringify(fnArgs)}`);
+
+            let toolResult: any = {};
+
+            if (fnName === "save_preference_or_fact") {
               const [mem] = await db.insert(memoriesTable).values({
-                content: args.content,
-                category: args.category || "general"
+                content: fnArgs.content,
+                category: fnArgs.category || "general"
               }).returning();
-              responseContent = { success: true, memory: mem };
-            } else if (call.name === "delete_preference_or_fact") {
-              const args = call.args as { id: number };
-              const [mem] = await db.delete(memoriesTable).where(eq(memoriesTable.id, args.id)).returning();
-              responseContent = { success: !!mem };
-            } else if (call.name === "execute_desktop_command") {
-              const args = call.args as { command: string };
+              toolResult = { success: true, memory: mem };
+            } else if (fnName === "delete_preference_or_fact") {
+              const [mem] = await db.delete(memoriesTable).where(eq(memoriesTable.id, fnArgs.id)).returning();
+              toolResult = { success: !!mem };
+            } else if (fnName === "execute_desktop_command") {
               try {
                 const agentRes = await fetch("http://localhost:7700/execute", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ message: args.command, confirmed: true }),
+                  body: JSON.stringify({ message: fnArgs.command, confirmed: true }),
                 });
                 if (agentRes.ok) {
                   const data = await agentRes.json() as { handled: boolean; response: string };
-                  responseContent = { success: data.handled, response: data.response };
+                  toolResult = { success: data.handled, response: data.response };
                 } else {
-                  responseContent = { success: false, error: `Agent responded with status: ${agentRes.status}` };
+                  toolResult = { success: false, error: `Agent responded with status: ${agentRes.status}` };
                 }
               } catch (err: any) {
-                responseContent = { success: false, error: err.message };
+                toolResult = { success: false, error: err.message };
               }
             }
 
-            functionResponses.push({
-              name: call.name,
-              response: responseContent,
-              id: call.id
+            groqMessages.push({
+              role: "tool",
+              tool_call_id: call.id,
+              content: JSON.stringify(toolResult)
             });
           }
-
-          currentMessages.push({
-            role: "model" as const,
-            parts: functionCalls.map(c => ({ functionCall: c }))
-          });
-          currentMessages.push({
-            role: "user" as const,
-            parts: functionResponses.map(r => ({ functionResponse: r }))
-          });
 
           retries++;
         }
 
-        if (!finalStream) {
-          finalStream = await ai.models.generateContentStream({
-            model: "gemini-2.5-flash",
-            contents: currentMessages,
-            config: { maxOutputTokens: 8192 }
+        // If we exited the tool loop and still need streaming (shouldn't happen, but safety net)
+        if (needsStreaming) {
+          const finalResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${groqKey}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              model: "llama-3.3-70b-versatile",
+              messages: groqMessages,
+              stream: true
+            })
           });
-        }
 
-        for await (const chunk of finalStream) {
-          const text = chunk.text;
-          if (text) {
-            fullResponse += text;
-            res.write(`data: ${JSON.stringify({ content: text })}\n\n`);
+          if (finalResponse.ok && finalResponse.body) {
+            const reader = finalResponse.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = "";
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split("\n");
+              buffer = lines.pop() || "";
+
+              for (const line of lines) {
+                const cleanedLine = line.trim();
+                if (cleanedLine.startsWith("data: ")) {
+                  const dataStr = cleanedLine.slice(6).trim();
+                  if (dataStr === "[DONE]") break;
+                  try {
+                    const data = JSON.parse(dataStr);
+                    const content = data.choices?.[0]?.delta?.content || "";
+                    if (content) {
+                      fullResponse += content;
+                      res.write(`data: ${JSON.stringify({ content })}\n\n`);
+                    }
+                  } catch {
+                    // ignore JSON parse error
+                  }
+                }
+              }
+            }
           }
         }
       } catch (err: any) {
-        logger.error(`Gemini fallback failed: ${err.message}`);
+        logger.error(`Groq Cloud API failed: ${err.message}`);
         res.write(`data: ${JSON.stringify({ content: `\n⚠ Error generating response: ${err.message}` })}\n\n`);
       }
     }

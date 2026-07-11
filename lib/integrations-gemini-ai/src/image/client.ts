@@ -2,29 +2,32 @@ import { GoogleGenAI, Modality } from "@google/genai";
 
 const apiKey = process.env.GEMINI_API_KEY || process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
 
-if (!apiKey) {
-  throw new Error(
-    "GEMINI_API_KEY must be set. Please add your Gemini API key to the environment secrets.",
-  );
-}
-
 const baseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
 
-export const ai = new GoogleGenAI({
-  apiKey,
-  ...(baseUrl
-    ? {
-        httpOptions: {
-          apiVersion: "",
-          baseUrl,
-        },
-      }
-    : {}),
-});
+// Make Gemini optional — don't crash if no API key is set.
+const ai: GoogleGenAI | null = apiKey
+  ? new GoogleGenAI({
+      apiKey,
+      ...(baseUrl
+        ? {
+            httpOptions: {
+              apiVersion: "",
+              baseUrl,
+            },
+          }
+        : {}),
+    })
+  : null;
 
 export async function generateImage(
   prompt: string
 ): Promise<{ b64_json: string; mimeType: string }> {
+  if (!ai) {
+    throw new Error(
+      "Image generation requires GEMINI_API_KEY to be set. Groq does not support image generation."
+    );
+  }
+
   const response = await ai.models.generateContent({
     model: "gemini-2.5-flash-image",
     contents: [{ role: "user", parts: [{ text: prompt }] }],

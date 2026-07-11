@@ -228,7 +228,7 @@ def ensure_api_server():
         env_file = os.path.join(root_dir, ".env")
         if not os.path.exists(env_file):
             with open(env_file, "w") as f:
-                f.write("GEMINI_API_KEY=YOUR_GEMINI_API_KEY\nPORT=5000\n")
+                f.write("GROQ_API_KEY=YOUR_GROQ_API_KEY\nPORT=5000\n")
             logger.info(f"Generated default .env file in root: {env_file}")
 
         # On Windows, suppress the command prompt popup window
@@ -257,13 +257,24 @@ def ensure_api_server():
 # Entry point
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    # Ensure SAGE is registered to run on Windows boot
+    # Ensure Windows desktop shortcut is created
     if startup_manager.IS_WINDOWS:
         try:
-            startup_manager.enable_startup()
-            logger.info("Auto-start registry checked/enabled successfully.")
+            startup_manager.create_desktop_shortcut()
+            logger.info("Desktop shortcut verified/created successfully.")
         except Exception as e:
-            logger.error(f"Could not enable startup registry: {e}")
+            logger.error(f"Could not verify/create desktop shortcut: {e}")
+            
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_SET_VALUE) as key:
+                try:
+                    winreg.DeleteValue(key, "SAGEAgent")
+                    logger.info("Legacy SAGEAgent registry entry cleaned up.")
+                except FileNotFoundError:
+                    pass
+        except Exception as e:
+            logger.error(f"Failed to cleanup legacy registry: {e}")
 
     # Ensure Node Express backend is running
     ensure_api_server()
